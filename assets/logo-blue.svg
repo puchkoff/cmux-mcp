@@ -9,16 +9,14 @@
     </filter>
   </defs>
 
-  <rect x="2" y="2" width="756" height="216" rx="26" fill="#07090c" stroke="#21262d" stroke-width="2"/>
+  <!-- transparent background -->
 
-  <!-- hollow / outline wordmark -->
   <text x="380" y="128" text-anchor="middle"
         font-family="ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace"
         font-size="76" font-weight="800" letter-spacing="3"
-        fill="none" stroke="#f2cc60" stroke-width="1.8" filter="url(#glow)">cmux-mcp</text>
+        fill="none" stroke="#58a6ff" stroke-width="1.8" filter="url(#glow)">cmux-mcp</text>
 
-  <!-- subtitle -->
   <text x="380" y="172" text-anchor="middle"
         font-family="ui-monospace, 'SF Mono', Menlo, monospace"
-        font-size="17" letter-spacing="5" fill="#9e7b1d">MCP SERVER · CMUX CLI</text>
+        font-size="17" letter-spacing="5" fill="#388bfd">MCP SERVER · CMUX CLI</text>
 </svg>
