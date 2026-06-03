@@ -40,20 +40,30 @@ server falls back to `CMUX_WORKSPACE_ID` from its own environment — i.e. the
 workspace the MCP client (and this server) was launched in — so new panes land
 where the user is actually working. Pass `workspace` explicitly to override.
 
-## Build
+## Install
+
+Requires Node ≥ 18 and the [cmux](https://cmux.io) app (the `cmux` binary).
 
 ```bash
+git clone https://github.com/puchkoff/cmux-mcp.git
+cd cmux-mcp
 npm install
-npm run build
+npm run build        # compiles to dist/
 ```
 
 ## Register with Claude Code
+
+Use the absolute path to the built entrypoint:
 
 ```bash
 claude mcp add cmux -- node /absolute/path/to/cmux-mcp/dist/index.js
 ```
 
-Or in `.mcp.json` / settings:
+- `--scope user` registers it for every project (default is the current project).
+- After adding, restart Claude Code (or reconnect via `/mcp`) — MCP tools load at session start.
+- Verify: `claude mcp get cmux` should report `✓ Connected`. The `cmux_*` tools then appear.
+
+Or register by hand in `.mcp.json` / settings:
 
 ```json
 {
@@ -65,6 +75,8 @@ Or in `.mcp.json` / settings:
   }
 }
 ```
+
+Works with any MCP client (Cursor, etc.) — point it at `node dist/index.js`.
 
 ## Env
 
