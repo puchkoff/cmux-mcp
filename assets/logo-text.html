@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cmux-mcp · hacker text logos</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 48px;
+    background: #07090c;
+    color: #c9d1d9;
+    font: 15px/1.5 ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 4px; color:#e6edf3; }
+  .sub { color:#6e7681; margin:0 0 40px; }
+  .grid { display:grid; grid-template-columns:1fr; gap:22px; max-width:920px; }
+  .card { background:#0d1117; border:1px solid #21262d; border-radius:14px; padding:34px 30px; display:flex; flex-direction:column; gap:18px; }
+  .tag { font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:#6e7681; }
+  .stage { display:flex; align-items:center; min-height:90px; }
+
+  /* 1 · terminal prompt, green phosphor */
+  .l-term { font-size:46px; font-weight:700; color:#39d353; letter-spacing:-1px;
+            text-shadow:0 0 8px rgba(57,211,83,.55); }
+  .l-term .cur { display:inline-block; width:.55em; height:1em; background:#39d353; margin-left:.12em;
+                 vertical-align:-2px; animation:blink 1.05s steps(1) infinite; box-shadow:0 0 10px #39d353; }
+  .l-term .dim { color:#1f8a3b; }
+  @keyframes blink { 50% { opacity:0; } }
+
+  /* 2 · neon cyan/magenta glow */
+  .l-neon { font-size:48px; font-weight:800; letter-spacing:1px;
+            background:linear-gradient(90deg,#22d3ee,#a855f7); -webkit-background-clip:text; background-clip:text; color:transparent;
+            filter:drop-shadow(0 0 10px rgba(34,211,238,.5)) drop-shadow(0 0 18px rgba(168,85,247,.4)); }
+
+  /* 3 · glitch / chromatic aberration */
+  .l-glitch { position:relative; font-size:48px; font-weight:800; color:#e6edf3; letter-spacing:0; }
+  .l-glitch::before, .l-glitch::after { content:"cmux-mcp"; position:absolute; left:0; top:0; }
+  .l-glitch::before { color:#ff2e63; transform:translate(-2px,0); mix-blend-mode:screen; animation:gl1 2.4s infinite steps(2); }
+  .l-glitch::after  { color:#08f7fe; transform:translate(2px,0);  mix-blend-mode:screen; animation:gl2 2.4s infinite steps(2); }
+  @keyframes gl1 { 0%,92%,100%{transform:translate(-2px,0)} 94%{transform:translate(-5px,-1px)} 96%{transform:translate(3px,1px)} }
+  @keyframes gl2 { 0%,92%,100%{transform:translate(2px,0)} 94%{transform:translate(5px,1px)} 96%{transform:translate(-3px,-1px)} }
+
+  /* 4 · ASCII box-draw frame */
+  .l-box { font-size:18px; font-weight:600; color:#39d353; white-space:pre; line-height:1.25;
+           text-shadow:0 0 6px rgba(57,211,83,.4); }
+
+  /* 5 · outline / matrix rain bg */
+  .l-out { font-size:50px; font-weight:800; letter-spacing:2px; color:transparent;
+           -webkit-text-stroke:1.6px #39d353; text-shadow:0 0 12px rgba(57,211,83,.35); }
+
+  /* 6 · bracketed command, GitHub-blue + green */
+  .l-cmd { font-size:44px; font-weight:700; color:#e6edf3; letter-spacing:-.5px; }
+  .l-cmd .br { color:#58a6ff; }
+  .l-cmd .mcp { color:#39d353; }
+  .l-cmd .sl { color:#6e7681; }
+</style>
+</head>
+<body>
+  <h1>cmux-mcp — hacker / terminal wordmarks</h1>
+  <p class="sub">Pure text. Tell me a number; I'll export it as an SVG logo + README banner.</p>
+
+  <div class="grid">
+
+    <div class="card">
+      <span class="tag">1 · phosphor prompt</span>
+      <div class="stage"><span class="l-term"><span class="dim">&gt;_ </span>cmux-mcp<span class="cur"></span></span></div>
+    </div>
+
+    <div class="card">
+      <span class="tag">2 · neon gradient</span>
+      <div class="stage"><span class="l-neon">cmux-mcp</span></div>
+    </div>
+
+    <div class="card">
+      <span class="tag">3 · glitch / chromatic</span>
+      <div class="stage"><span class="l-glitch">cmux-mcp</span></div>
+    </div>
+
+    <div class="card">
+      <span class="tag">4 · ascii box</span>
+      <div class="stage"><span class="l-box">┌─[ cmux-mcp ]─────────┐
+│ &gt; mcp server : cmux  │
+└──────────────────────┘</span></div>
+    </div>
+
+    <div class="card">
+      <span class="tag">5 · outline / hollow</span>
+      <div class="stage"><span class="l-out">cmux-mcp</span></div>
+    </div>
+
+    <div class="card">
+      <span class="tag">6 · bracketed command</span>
+      <div class="stage"><span class="l-cmd"><span class="br">[</span>cmux<span class="sl">-</span><span class="mcp">mcp</span><span class="br">]</span></span></div>
+    </div>
+
+  </div>
+</body>
+</html>

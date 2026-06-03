@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.0' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.2.0' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -159,6 +159,84 @@ server.registerTool(
     },
   },
   ({ kind, ref }) => call([`close-${kind}`, `--${kind}`, ref]),
+);
+
+// "Close this workspace" must target the workspace the CALLING pane runs in
+// (identify.caller.workspace_ref), never the UI-focused one. An agent can run in
+// workspace A while the user has clicked into workspace B, so B is focused.
+// Resolving from `focused` (or `identify --no-caller`, which drops caller) would
+// close whatever the user last clicked — possibly unrelated. So we read caller,
+// refuse if there is no calling pane, and require an explicit confirm first.
+
+// Look up a workspace title from list-workspaces ("* workspace:2  My Title  [selected]").
+async function workspaceTitle(ref: string): Promise<string | null> {
+  const res = await runCmux(['list-workspaces']);
+  if (!res.ok) return null;
+  for (const line of res.output.split('\n')) {
+    const tokens = line.trim().split(/\s+/);
+    const i = tokens.indexOf(ref);
+    if (i === -1) continue;
+    const rest = tokens.slice(i + 1).filter((t) => t !== '[selected]');
+    return rest.join(' ') || null;
+  }
+  return null;
+}
+
+server.registerTool(
+  'cmux_close_current_workspace',
+  {
+    title: "Close the calling pane's workspace (safe)",
+    description:
+      "Close the workspace the CALLING pane runs in (identify.caller.workspace_ref) — NOT the focused one, which may be a workspace the user just clicked into. First call previews the resolved target; call again with confirm=true to actually close. Refuses if there is no calling pane (invoked outside a cmux terminal) rather than guessing from focus.",
+    inputSchema: {
+      confirm: z
+        .boolean()
+        .optional()
+        .describe('Set true to actually close. Omit/false to only preview the resolved target.'),
+    },
+  },
+  async ({ confirm }) => {
+    const id = await runCmux(['identify']);
+    if (!id.ok) return { content: [{ type: 'text', text: id.output }], isError: true };
+
+    let caller: { workspace_ref?: string } | null = null;
+    try {
+      caller = (JSON.parse(id.output) as { caller?: { workspace_ref?: string } | null }).caller ?? null;
+    } catch {
+      return { content: [{ type: 'text', text: `Could not parse identify output:\n${id.output}` }], isError: true };
+    }
+
+    const ref = caller?.workspace_ref;
+    if (!ref) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              'No calling pane (identify.caller is null) — this was not invoked from inside a cmux terminal. ' +
+              'Refusing to fall back to the focused workspace. Pass an explicit workspace ref to cmux_close instead.',
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const title = await workspaceTitle(ref);
+    const label = title ? `${ref} — ${title}` : ref;
+
+    if (!confirm) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `About to close workspace: ${label}. Confirm by calling cmux_close_current_workspace again with confirm=true.`,
+          },
+        ],
+      };
+    }
+
+    return call(['close-workspace', '--workspace', ref]);
+  },
 );
 
 // --- Input ---------------------------------------------------------------

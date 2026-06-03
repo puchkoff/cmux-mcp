@@ -21,7 +21,8 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 | `cmux_new_workspace` | Create a workspace (name, cwd, startup command) |
 | `cmux_rename_workspace` | Retitle a workspace (via `workspace-action`) |
 | `cmux_focus_pane` | Focus a pane |
-| `cmux_close` | Close a surface or workspace |
+| `cmux_close` | Close a surface or workspace (explicit ref) |
+| `cmux_close_current_workspace` | Safely close the *calling* pane's workspace (confirm-guarded) |
 | `cmux_send` | Type literal text into a pane (no Enter) |
 | `cmux_send_key` | Send a named key (`Enter`, `C-c`, …) |
 | `cmux_notify` | Post a cmux notification |
@@ -39,6 +40,24 @@ which drifts as the user clicks around. When a tool call omits `workspace`, the
 server falls back to `CMUX_WORKSPACE_ID` from its own environment — i.e. the
 workspace the MCP client (and this server) was launched in — so new panes land
 where the user is actually working. Pass `workspace` explicitly to override.
+
+### "Close this workspace" safety
+
+`cmux identify` returns two refs: `caller` (the pane the calling process actually
+runs in) and `focused` (the workspace with UI focus right now). These differ — an
+agent runs in workspace A while the user clicks into workspace B, so B is focused.
+
+`cmux_close_current_workspace` always resolves the target from
+`identify.caller.workspace_ref`, never `focused`. If `caller` is null (invoked
+outside a cmux terminal) it refuses and asks for an explicit ref rather than
+guessing from focus. The first call only previews the resolved target
+(`About to close workspace:5 — user-roles-3. Confirm?`); you must call again with
+`confirm=true` to actually close — so a wrong target is caught before it's
+destructive.
+
+> Do **not** use `identify --no-caller` (or read `focused.workspace_ref`) when the
+> intent is "act on my own workspace" — it drops `caller` and can close whatever the
+> user last clicked. `--no-caller` is only for queries *about* UI focus.
 
 ## Install
 

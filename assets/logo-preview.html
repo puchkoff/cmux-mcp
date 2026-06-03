@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cmux-mcp logo concepts</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 48px;
+    background: #0d1117;
+    color: #e6edf3;
+    font: 15px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: #7d8590; margin: 0 0 40px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 28px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #7d8590; margin: 0 0 20px; }
+  .stage { display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; }
+  .swatch-light { background: #f6f8fa; border-radius: 10px; padding: 18px; }
+  .row { display: flex; align-items: center; gap: 20px; margin-top: 22px; flex-wrap: wrap; }
+  .note { color: #7d8590; font-size: 12px; margin-top: 18px; }
+  .favtest { display:flex; gap:10px; align-items:center; margin-top:18px; }
+</style>
+</head>
+<body>
+  <h1>cmux-mcp — logo concepts</h1>
+  <p class="sub">MCP server wrapping the cmux CLI. Pick one (or mix). SVG, scales to any size.</p>
+
+  <div class="grid">
+
+    <!-- Concept A: Split panes + plug node -->
+    <div class="card">
+      <h2>A · Split panes + MCP node</h2>
+      <div class="stage">
+        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="8" y="8" width="104" height="104" rx="22" fill="#0d1117" stroke="#30363d" stroke-width="2"/>
+          <!-- left full pane -->
+          <rect x="24" y="28" width="30" height="64" rx="6" fill="#1f6feb"/>
+          <!-- right top pane -->
+          <rect x="62" y="28" width="34" height="28" rx="6" fill="#2ea043"/>
+          <!-- right bottom pane -->
+          <rect x="62" y="64" width="34" height="28" rx="6" fill="#a371f7"/>
+          <!-- mcp connector node -->
+          <circle cx="60" cy="60" r="7" fill="#0d1117" stroke="#e6edf3" stroke-width="2.5"/>
+        </svg>
+        <div class="swatch-light">
+          <svg width="80" height="80" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="8" width="104" height="104" rx="22" fill="#fff" stroke="#d0d7de" stroke-width="2"/>
+            <rect x="24" y="28" width="30" height="64" rx="6" fill="#1f6feb"/>
+            <rect x="62" y="28" width="34" height="28" rx="6" fill="#2ea043"/>
+            <rect x="62" y="64" width="34" height="28" rx="6" fill="#a371f7"/>
+            <circle cx="60" cy="60" r="7" fill="#fff" stroke="#1f2328" stroke-width="2.5"/>
+          </svg>
+        </div>
+      </div>
+      <div class="row">
+        <svg height="42" viewBox="0 0 360 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="6" width="48" height="48" rx="11" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+          <rect x="11" y="16" width="13" height="28" rx="3" fill="#1f6feb"/>
+          <rect x="28" y="16" width="14" height="12" rx="3" fill="#2ea043"/>
+          <rect x="28" y="32" width="14" height="12" rx="3" fill="#a371f7"/>
+          <circle cx="26" cy="30" r="3.2" fill="#0d1117" stroke="#e6edf3" stroke-width="1.4"/>
+          <text x="66" y="40" font-family="ui-monospace, monospace" font-size="30" font-weight="700" fill="#e6edf3">cmux<tspan fill="#7d8590">-mcp</tspan></text>
+        </svg>
+      </div>
+      <p class="note">Terminal window split into panes; white ring = the MCP socket joining them.</p>
+    </div>
+
+    <!-- Concept B: Bracket prompt + panes -->
+    <div class="card">
+      <h2>B · Prompt bracket</h2>
+      <div class="stage">
+        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="8" y="8" width="104" height="104" rx="26" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+          <path d="M34 40 L54 60 L34 80" stroke="#2ea043" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="64" y="71" width="26" height="9" rx="4.5" fill="#1f6feb"/>
+        </svg>
+        <div class="swatch-light">
+          <svg width="80" height="80" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="8" width="104" height="104" rx="26" fill="#fff" stroke="#d0d7de" stroke-width="2"/>
+            <path d="M34 40 L54 60 L34 80" stroke="#1a7f37" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="64" y="71" width="26" height="9" rx="4.5" fill="#1f6feb"/>
+          </svg>
+        </div>
+      </div>
+      <div class="row">
+        <svg height="42" viewBox="0 0 360 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="6" width="48" height="48" rx="13" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+          <path d="M15 20 L25 30 L15 40" stroke="#2ea043" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="29" y="35.5" width="13" height="4.5" rx="2.2" fill="#1f6feb"/>
+          <text x="66" y="40" font-family="ui-monospace, monospace" font-size="30" font-weight="700" fill="#e6edf3">cmux<tspan fill="#7d8590">-mcp</tspan></text>
+        </svg>
+      </div>
+      <p class="note">Shell prompt <code>&gt;_</code> — instantly reads as "terminal / CLI".</p>
+    </div>
+
+    <!-- Concept C: Hexagon MCP plug + panes -->
+    <div class="card">
+      <h2>C · MCP hex plug</h2>
+      <div class="stage">
+        <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#1f6feb"/>
+              <stop offset="1" stop-color="#a371f7"/>
+            </linearGradient>
+          </defs>
+          <path d="M60 10 L98 32 V76 L60 98 L22 76 V32 Z" fill="#0d1117" stroke="url(#cg)" stroke-width="3"/>
+          <rect x="40" y="42" width="14" height="36" rx="4" fill="#1f6feb"/>
+          <rect x="60" y="42" width="20" height="15" rx="4" fill="#2ea043"/>
+          <rect x="60" y="63" width="20" height="15" rx="4" fill="#a371f7"/>
+        </svg>
+        <div class="swatch-light">
+          <svg width="80" height="80" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M60 10 L98 32 V76 L60 98 L22 76 V32 Z" fill="#fff" stroke="#1f6feb" stroke-width="3"/>
+            <rect x="40" y="42" width="14" height="36" rx="4" fill="#1f6feb"/>
+            <rect x="60" y="42" width="20" height="15" rx="4" fill="#2ea043"/>
+            <rect x="60" y="63" width="20" height="15" rx="4" fill="#a371f7"/>
+          </svg>
+        </div>
+      </div>
+      <div class="row">
+        <svg height="42" viewBox="0 0 380 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M26 8 L45 19 V41 L26 52 L7 41 V19 Z" fill="#0d1117" stroke="url(#cg)" stroke-width="2"/>
+          <rect x="18" y="22" width="6" height="16" rx="2" fill="#1f6feb"/>
+          <rect x="27" y="22" width="9" height="7" rx="2" fill="#2ea043"/>
+          <rect x="27" y="31" width="9" height="7" rx="2" fill="#a371f7"/>
+          <text x="62" y="40" font-family="ui-monospace, monospace" font-size="30" font-weight="700" fill="#e6edf3">cmux<tspan fill="#7d8590">-mcp</tspan></text>
+        </svg>
+      </div>
+      <p class="note">Hexagon = the MCP "plugin" badge; inner panes = cmux. Most distinctive at favicon size.</p>
+      <div class="favtest">
+        <span style="color:#7d8590;font-size:12px">favicon:</span>
+        <svg width="16" height="16" viewBox="0 0 120 120"><path d="M60 10 L98 32 V76 L60 98 L22 76 V32 Z" fill="#0d1117" stroke="#1f6feb" stroke-width="6"/><rect x="40" y="42" width="14" height="36" rx="4" fill="#1f6feb"/><rect x="60" y="42" width="20" height="15" rx="4" fill="#2ea043"/><rect x="60" y="63" width="20" height="15" rx="4" fill="#a371f7"/></svg>
+        <svg width="24" height="24" viewBox="0 0 120 120"><path d="M60 10 L98 32 V76 L60 98 L22 76 V32 Z" fill="#0d1117" stroke="#1f6feb" stroke-width="5"/><rect x="40" y="42" width="14" height="36" rx="4" fill="#1f6feb"/><rect x="60" y="42" width="20" height="15" rx="4" fill="#2ea043"/><rect x="60" y="63" width="20" height="15" rx="4" fill="#a371f7"/></svg>
+        <svg width="32" height="32" viewBox="0 0 120 120"><path d="M60 10 L98 32 V76 L60 98 L22 76 V32 Z" fill="#0d1117" stroke="#1f6feb" stroke-width="4"/><rect x="40" y="42" width="14" height="36" rx="4" fill="#1f6feb"/><rect x="60" y="42" width="20" height="15" rx="4" fill="#2ea043"/><rect x="60" y="63" width="20" height="15" rx="4" fill="#a371f7"/></svg>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
