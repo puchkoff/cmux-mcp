@@ -1,4 +1,6 @@
-# cmux-mcp
+<p align="center">
+  <img src="assets/logo.svg" alt="cmux-mcp" width="480">
+</p>
 
 MCP server wrapping the [cmux](https://cmux.io) CLI. Lets an MCP client (Claude
 Code, etc.) drive cmux panes, workspaces, terminal input, and the embedded

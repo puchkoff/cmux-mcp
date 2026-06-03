@@ -1,0 +1,24 @@
+<svg width="760" height="220" viewBox="0 0 760 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="cmux-mcp">
+  <defs>
+    <filter id="glow" x="-30%" y="-50%" width="160%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="2" y="2" width="756" height="216" rx="26" fill="#07090c" stroke="#21262d" stroke-width="2"/>
+
+  <!-- hollow / outline wordmark -->
+  <text x="380" y="128" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace"
+        font-size="76" font-weight="800" letter-spacing="3"
+        fill="none" stroke="#39d353" stroke-width="1.8" filter="url(#glow)">cmux-mcp</text>
+
+  <!-- subtitle -->
+  <text x="380" y="172" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', Menlo, monospace"
+        font-size="17" letter-spacing="5" fill="#1f8a3b">MCP SERVER · CMUX CLI</text>
+</svg>
