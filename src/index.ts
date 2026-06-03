@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.2.0' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.1' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
