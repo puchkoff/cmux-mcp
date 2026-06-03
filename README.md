@@ -44,6 +44,18 @@ where the user is actually working. Pass `workspace` explicitly to override.
 
 Requires Node ≥ 18 and the [cmux](https://cmux.io) app (the `cmux` binary).
 
+### Without cloning (recommended)
+
+`npx` installs and builds straight from GitHub — no clone, no manual build:
+
+```bash
+claude mcp add cmux -- npx -y github:puchkoff/cmux-mcp
+```
+
+The first run compiles the TypeScript (via the package's `prepare` step) and caches it; later runs start instantly.
+
+### From a clone
+
 ```bash
 git clone https://github.com/puchkoff/cmux-mcp.git
 cd cmux-mcp
@@ -53,7 +65,7 @@ npm run build        # compiles to dist/
 
 ## Register with Claude Code
 
-Use the absolute path to the built entrypoint:
+If you cloned, register with the absolute path to the built entrypoint:
 
 ```bash
 claude mcp add cmux -- node /absolute/path/to/cmux-mcp/dist/index.js
