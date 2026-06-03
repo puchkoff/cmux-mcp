@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="cmux-mcp" width="480">
+  <img src="assets/logo-yellow.svg" alt="cmux-mcp" width="480">
 </p>
 
 MCP server wrapping the [cmux](https://cmux.io) CLI. Lets an MCP client (Claude
