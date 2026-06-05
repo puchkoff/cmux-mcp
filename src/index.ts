@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.1' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.2' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -136,6 +136,27 @@ server.registerTool(
   },
   ({ title, workspace }) =>
     call(withWorkspace(['workspace-action', '--action', 'rename', '--title', title], workspace)),
+);
+
+server.registerTool(
+  'cmux_rename_tab',
+  {
+    title: 'Rename a tab',
+    description:
+      "Set a tab's title (the pane's tab label). Target the tab by ref, or by a surface inside it; defaults to the current tab.",
+    inputSchema: {
+      title: z.string(),
+      tab: z.string().optional().describe('Tab ref like "tab:11".'),
+      surface: surfaceArg,
+      workspace: workspaceArg,
+    },
+  },
+  ({ title, tab, surface, workspace }) => {
+    const args = ['rename-tab'];
+    if (tab) args.push('--tab', tab);
+    if (surface) args.push('--surface', surface);
+    return call(withWorkspace([...args, title], workspace));
+  },
 );
 
 server.registerTool(

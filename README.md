@@ -20,6 +20,7 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 | `cmux_new_pane` | Split a new terminal or browser pane |
 | `cmux_new_workspace` | Create a workspace (name, cwd, startup command) |
 | `cmux_rename_workspace` | Retitle a workspace (via `workspace-action`) |
+| `cmux_rename_tab` | Retitle a tab (the pane's tab label, via `rename-tab`) |
 | `cmux_focus_pane` | Focus a pane |
 | `cmux_close` | Close a surface or workspace (explicit ref) |
 | `cmux_close_current_workspace` | Safely close the *calling* pane's workspace (confirm-guarded) |
