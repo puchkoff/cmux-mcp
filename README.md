@@ -16,7 +16,7 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 | `cmux_identify` | Current + focused window/workspace/pane/surface refs (JSON) |
 | `cmux_tree` | window > workspace > pane > surface hierarchy |
 | `cmux_list` | List `windows` / `workspaces` / `panes` |
-| `cmux_capture` | Read a terminal surface's screen / scrollback |
+| `cmux_capture` | Read a terminal surface's screen / scrollback (workspace/window-aware) |
 | `cmux_new_pane` | Split a new terminal or browser pane |
 | `cmux_new_workspace` | Create a workspace (name, cwd, startup command) |
 | `cmux_rename_workspace` | Retitle a workspace (via `workspace-action`) |
@@ -24,8 +24,11 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 | `cmux_focus_pane` | Focus a pane |
 | `cmux_close` | Close a surface or workspace (explicit ref) |
 | `cmux_close_current_workspace` | Safely close the *calling* pane's workspace (confirm-guarded) |
-| `cmux_send` | Type literal text into a pane (no Enter) |
-| `cmux_send_key` | Send a named key (`Enter`, `C-c`, …) |
+| `cmux_send` | Type literal text into a pane (no Enter, workspace/window-aware) |
+| `cmux_send_key` | Send a named key (`Enter`, `C-c`/`ctrl+c`, …) |
+| `cmux_list_panels` | List a workspace's panels to discover a panel ref |
+| `cmux_send_panel` | Send text to an agent panel (`send-panel`) |
+| `cmux_wait_ready` | Poll a panel until it's ready for input (vs. sleeping) |
 | `cmux_notify` | Post a cmux notification |
 | `cmux_browser` | Passthrough for any `cmux browser` subcommand (args array) |
 | `cmux_raw` | Escape hatch — run any `cmux` subcommand |
@@ -41,6 +44,19 @@ which drifts as the user clicks around. When a tool call omits `workspace`, the
 server falls back to `CMUX_WORKSPACE_ID` from its own environment — i.e. the
 workspace the MCP client (and this server) was launched in — so new panes land
 where the user is actually working. Pass `workspace` explicitly to override.
+
+### Driving a surface in another workspace
+
+`cmux_send`, `cmux_send_key`, and `cmux_capture` resolve a bare `surface:N` ref
+against the **caller's** workspace. To drive a pane in a workspace you spawned
+elsewhere (e.g. a `cmux_new_workspace` running Claude), pass `workspace` (and
+`window` if needed) alongside `surface`. Without it cmux can't find the ref and
+reports a misleading `Surface is not a terminal`; these tools now rewrite that to
+name the surface's real workspace and tell you which `workspace=` to pass.
+
+For agent panels (`cmux claude-teams`), discover the ref with `cmux_list_panels`,
+drive it with `cmux_send_panel`, and use `cmux_wait_ready` (with a `pattern`
+matching the input prompt) to know when it accepts input instead of sleeping.
 
 ### "Close this workspace" safety
 

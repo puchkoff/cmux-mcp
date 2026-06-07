@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.2' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.3' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -13,14 +13,84 @@ async function call(args: string[]): Promise<ToolResult> {
   return { content: [{ type: 'text', text: output }], isError: !ok };
 }
 
+function errorText(text: string): ToolResult {
+  return { content: [{ type: 'text', text }], isError: true };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 const workspaceArg = z
   .string()
   .optional()
-  .describe('Workspace ref like "workspace:26". Defaults to the workspace this server was launched in.');
+  .describe('Workspace ref like "workspace:26". Defaults to the caller\'s workspace.');
+const windowArg = z
+  .string()
+  .optional()
+  .describe('Window ref like "window:1". Defaults to the caller\'s window.');
 const surfaceArg = z
   .string()
   .optional()
   .describe('Surface ref like "surface:40". Defaults to the current pane.');
+
+// Append --workspace/--window only when explicitly given. No env fallback — these
+// surface-targeting tools historically sent neither, letting cmux resolve against
+// the caller's own context; that exact behavior must hold when both are omitted.
+function withTarget(args: string[], workspace?: string, window?: string): string[] {
+  const a = [...args];
+  if (workspace) a.push('--workspace', workspace);
+  if (window) a.push('--window', window);
+  return a;
+}
+
+// Which workspace a surface ref actually lives in, scanned from `tree --all`.
+async function surfaceWorkspace(surface: string): Promise<string | null> {
+  const res = await runCmux(['tree', '--all']);
+  if (!res.ok) return null;
+  const re = new RegExp(`(^|\\s)${surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|\\[|$)`);
+  let ws: string | null = null;
+  for (const line of res.output.split('\n')) {
+    const m = line.match(/workspace (workspace:\d+)/);
+    if (m) ws = m[1];
+    if (/\bsurface\b/.test(line) && re.test(line)) return ws;
+  }
+  return null;
+}
+
+async function callerWorkspace(): Promise<string | null> {
+  const id = await runCmux(['identify']);
+  if (!id.ok) return null;
+  try {
+    return (JSON.parse(id.output) as { caller?: { workspace_ref?: string } | null })?.caller?.workspace_ref ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Run a surface-targeting command and, on the ambiguous "not a terminal" / "not
+// found" errors, explain WHY: a bare surface ref resolves against the caller's
+// workspace, so one that lives elsewhere reads as missing. Distinguish that from a
+// surface that is genuinely a non-terminal (browser) panel.
+async function callSurface(args: string[], surface?: string, workspace?: string): Promise<ToolResult> {
+  const r = await call(args);
+  if (!r.isError || !surface) return r;
+  const msg = r.content.map((c) => c.text).join('\n');
+  if (!/not a terminal|not found/i.test(msg)) return r;
+  const home = await surfaceWorkspace(surface);
+  const target = workspace ?? (await callerWorkspace());
+  if (home && home !== target) {
+    return errorText(
+      `${surface} not found in ${target ?? "the caller's workspace"} (the active default) — it lives in ${home}. ` +
+        `Re-run with workspace=${home} to target it.  [cmux: ${msg}]`,
+    );
+  }
+  if (home && home === target) {
+    return errorText(
+      `${surface} is in ${home} but cmux reports it is not a terminal — it is likely a browser / non-terminal panel, ` +
+        `not a shell surface.  [cmux: ${msg}]`,
+    );
+  }
+  return r;
+}
 
 // --- Inspect -------------------------------------------------------------
 
@@ -69,19 +139,22 @@ server.registerTool(
   'cmux_capture',
   {
     title: 'Read pane output',
-    description: 'Read the current screen (or scrollback) of a terminal surface.',
+    description:
+      'Read the current screen (or scrollback) of a terminal surface (wraps read-screen). Pass workspace/window to read a surface that lives in another workspace.',
     inputSchema: {
       surface: surfaceArg,
+      workspace: workspaceArg,
+      window: windowArg,
       lines: z.number().int().positive().optional().describe('Limit to the last N lines.'),
       scrollback: z.boolean().optional().describe('Include scrollback history.'),
     },
   },
-  ({ surface, lines, scrollback }) => {
+  ({ surface, workspace, window, lines, scrollback }) => {
     const args = ['read-screen'];
     if (surface) args.push('--surface', surface);
     if (lines) args.push('--lines', String(lines));
     if (scrollback) args.push('--scrollback');
-    return call(args);
+    return callSurface(withTarget(args, workspace, window), surface, workspace);
   },
 );
 
@@ -267,14 +340,14 @@ server.registerTool(
   {
     title: 'Send text to a pane',
     description:
-      'Type literal text into a terminal surface. Does NOT press Enter — follow with cmux_send_key Enter.',
-    inputSchema: { text: z.string(), surface: surfaceArg },
+      'Type literal text into a terminal surface. Does NOT press Enter — follow with cmux_send_key Enter. Pass workspace/window to target a surface in another workspace.',
+    inputSchema: { text: z.string(), surface: surfaceArg, workspace: workspaceArg, window: windowArg },
   },
-  ({ text, surface }) => {
+  ({ text, surface, workspace, window }) => {
     const args = ['send'];
     if (surface) args.push('--surface', surface);
     args.push(text);
-    return call(args);
+    return callSurface(withTarget(args, workspace, window), surface, workspace);
   },
 );
 
@@ -282,14 +355,99 @@ server.registerTool(
   'cmux_send_key',
   {
     title: 'Send a key to a pane',
-    description: 'Send a named key such as Enter, Tab, Escape, C-c, C-d.',
-    inputSchema: { key: z.string().describe('e.g. "Enter", "C-c".'), surface: surfaceArg },
+    description:
+      'Send a named key such as Enter, Tab, Escape, C-c, C-d. Ctrl chords accept either form: "C-u" or "ctrl+u". Pass workspace/window to target a surface in another workspace.',
+    inputSchema: {
+      key: z.string().describe('e.g. "Enter", "C-c" / "ctrl+c".'),
+      surface: surfaceArg,
+      workspace: workspaceArg,
+      window: windowArg,
+    },
   },
-  ({ key, surface }) => {
+  async ({ key, surface, workspace, window }) => {
+    // Accept "ctrl+u" / "ctrl-u" as aliases for cmux's "C-u" form.
+    const normalized = key.replace(/^(ctrl|control)[-+]/i, 'C-');
     const args = ['send-key'];
     if (surface) args.push('--surface', surface);
-    args.push(key);
-    return call(args);
+    args.push(normalized);
+    const r = await callSurface(withTarget(args, workspace, window), surface, workspace);
+    if (r.isError && /unknown key/i.test(r.content.map((c) => c.text).join('\n'))) {
+      return errorText(
+        `Unknown key "${key}". cmux accepts named keys — e.g. Enter, Tab, Escape, Space, Backspace, Delete, ` +
+          `Up, Down, Left, Right, Home, End, PageUp, PageDown — and ctrl chords like C-c (or ctrl+c).`,
+      );
+    }
+    return r;
+  },
+);
+
+// --- Panels (agent surfaces) --------------------------------------------
+// Agent panels (e.g. `cmux claude-teams`) are driven through dedicated panel
+// commands rather than plain send/read-screen.
+
+server.registerTool(
+  'cmux_list_panels',
+  {
+    title: 'List panels',
+    description: 'List the panels (agent/terminal surfaces) in a workspace, so you can discover a panel ref to drive.',
+    inputSchema: { workspace: workspaceArg, window: windowArg },
+  },
+  ({ workspace, window }) => call(withTarget(['list-panels'], workspace, window)),
+);
+
+server.registerTool(
+  'cmux_send_panel',
+  {
+    title: 'Send text to a panel',
+    description:
+      'Send text into an agent panel via send-panel. Use cmux_list_panels to find the panel ref. Pass workspace/window when the panel lives in another workspace.',
+    inputSchema: {
+      panel: z.string().describe('Panel ref like "surface:39".'),
+      text: z.string(),
+      workspace: workspaceArg,
+      window: windowArg,
+    },
+  },
+  ({ panel, text, workspace, window }) => {
+    const args = withTarget(['send-panel', '--panel', panel], workspace, window);
+    args.push(text);
+    return callSurface(args, panel, workspace);
+  },
+);
+
+server.registerTool(
+  'cmux_wait_ready',
+  {
+    title: 'Wait for a panel to be ready',
+    description:
+      'Poll a surface/panel until it looks ready for input, then return the final screen. Ready = the screen matches `pattern` (regex) or, when no pattern is given, the screen is non-empty and unchanged between two polls. Use after spawning a panel instead of sleeping. For a live TUI (blinking cursor never settles) pass a `pattern` that marks the input prompt.',
+    inputSchema: {
+      surface: z.string().describe('Surface/panel ref to watch, e.g. "surface:39".'),
+      pattern: z.string().optional().describe('Regex; ready as soon as the screen matches it.'),
+      workspace: workspaceArg,
+      window: windowArg,
+      timeoutMs: z.number().int().positive().optional().describe('Give up after this long (default 15000).'),
+    },
+  },
+  async ({ surface, pattern, workspace, window, timeoutMs }) => {
+    const limit = timeoutMs ?? 15_000;
+    const deadline = Date.now() + limit;
+    const re = pattern ? new RegExp(pattern) : null;
+    let prev: string | null = null;
+    while (Date.now() < deadline) {
+      const r = await runCmux(withTarget(['read-screen', '--surface', surface], workspace, window));
+      if (r.ok) {
+        const screen = r.output.trim();
+        if (re) {
+          if (re.test(r.output)) return { content: [{ type: 'text', text: `READY ${surface}\n--- screen ---\n${screen}` }] };
+        } else if (screen && prev !== null && screen === prev) {
+          return { content: [{ type: 'text', text: `READY ${surface}\n--- screen ---\n${screen}` }] };
+        }
+        prev = screen;
+      }
+      await sleep(400);
+    }
+    return errorText(`cmux_wait_ready: ${surface} not ready after ${limit}ms.\n--- last screen ---\n${prev ?? '(no output)'}`);
   },
 );
 
