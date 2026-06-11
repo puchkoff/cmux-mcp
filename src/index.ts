@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.3' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.4' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -184,19 +184,29 @@ server.registerTool(
   'cmux_new_workspace',
   {
     title: 'Create a workspace',
-    description: 'Create a new workspace, optionally with a title, cwd, and startup command.',
+    description:
+      'Create a new workspace, optionally with a title, cwd, and startup command. Pass group to create it inside a workspace group.',
     inputSchema: {
       name: z.string().optional(),
       cwd: z.string().optional(),
       command: z.string().optional().describe('Command to run in the first pane.'),
+      group: z.string().optional().describe('Add the new workspace to this group, e.g. "workspace_group:3".'),
     },
   },
-  ({ name, cwd, command }) => {
+  // Create then `group add` — cmux's own `workspace group new-workspace`
+  // silently ignores --name/--cwd/--command.
+  async ({ name, cwd, command, group }) => {
     const args = ['new-workspace'];
     if (name) args.push('--name', name);
     if (cwd) args.push('--cwd', cwd);
     if (command) args.push('--command', command);
-    return call(args);
+    const created = await runCmux(args);
+    if (!created.ok || !group) return { content: [{ type: 'text', text: created.output }], isError: !created.ok };
+    const ref = created.output.match(/workspace:\d+/)?.[0];
+    if (!ref) return errorText(`Created a workspace but could not parse its ref to add to ${group}:\n${created.output}`);
+    const added = await runCmux(['workspace', 'group', 'add', '--group', group, '--workspace', ref]);
+    if (!added.ok) return errorText(`Created ${ref} but failed to add it to ${group}: ${added.output}`);
+    return { content: [{ type: 'text', text: `${created.output} (added to ${group})` }] };
   },
 );
 
@@ -330,6 +340,115 @@ server.registerTool(
     }
 
     return call(['close-workspace', '--workspace', ref]);
+  },
+);
+
+// --- Workspace groups ------------------------------------------------------
+// Collapsible sidebar groups of workspaces (wraps `cmux workspace group`).
+// Each group is owned by an "anchor" workspace whose sidebar row IS the group
+// header; `create` always spawns a fresh anchor workspace. `delete` closes
+// every member workspace — `ungroup` is the safe dissolve.
+
+const groupArg = z.string().describe('Group ref like "workspace_group:3" (or its UUID).');
+
+server.registerTool(
+  'cmux_list_groups',
+  {
+    title: 'List workspace groups',
+    description:
+      "List sidebar workspace groups as JSON, including each group's name, anchor, and member workspace refs.",
+    inputSchema: {},
+  },
+  () => call(['workspace', 'group', 'list', '--json']),
+);
+
+server.registerTool(
+  'cmux_new_group',
+  {
+    title: 'Create a workspace group',
+    description:
+      'Group workspaces under a collapsible sidebar header. Spawns a fresh anchor workspace that becomes the header row. If `workspaces` is omitted, cmux seeds the group from the active sidebar selection / caller workspace — pass it explicitly to control membership.',
+    inputSchema: {
+      name: z.string().optional(),
+      workspaces: z
+        .array(z.string())
+        .optional()
+        .describe('Workspace refs to group, e.g. ["workspace:3", "workspace:4"].'),
+      cwd: z.string().optional().describe('cwd for the new anchor workspace.'),
+    },
+  },
+  ({ name, workspaces, cwd }) => {
+    const args = ['workspace', 'group', 'create'];
+    if (name) args.push('--name', name);
+    if (cwd) args.push('--cwd', cwd);
+    if (workspaces?.length) args.push('--from', workspaces.join(','));
+    return call(args);
+  },
+);
+
+server.registerTool(
+  'cmux_group_action',
+  {
+    title: 'Act on a workspace group',
+    description:
+      'Run an action on a group: rename (needs name), collapse, expand, pin, unpin, focus (focuses its anchor), set-color (hex; omit to clear), set-icon (symbol; omit to clear), move (toIndex/before/after), ungroup (dissolve, keep workspaces), delete (CLOSES every member workspace — needs confirm=true; prefer ungroup).',
+    inputSchema: {
+      action: z.enum([
+        'rename',
+        'collapse',
+        'expand',
+        'pin',
+        'unpin',
+        'focus',
+        'set-color',
+        'set-icon',
+        'move',
+        'ungroup',
+        'delete',
+      ]),
+      group: groupArg,
+      name: z.string().optional().describe('New name (rename).'),
+      hex: z.string().optional().describe('"#RRGGBB" (set-color); omit to clear the color.'),
+      symbol: z.string().optional().describe('SF Symbol name like "star.fill" (set-icon); omit to clear.'),
+      toIndex: z.number().int().optional().describe('Target position (move).'),
+      before: z.string().optional().describe('Move before this group ref (move).'),
+      after: z.string().optional().describe('Move after this group ref (move).'),
+      confirm: z.boolean().optional().describe('Required true for delete.'),
+    },
+  },
+  ({ action, group, name, hex, symbol, toIndex, before, after, confirm }) => {
+    if (action === 'delete' && !confirm) {
+      return errorText(
+        `delete closes EVERY workspace in ${group}. Call again with confirm=true, or use ungroup to dissolve the group and keep its workspaces.`,
+      );
+    }
+    const args = ['workspace', 'group', action, group];
+    if (name) args.push('--name', name);
+    if (hex) args.push('--hex', hex);
+    if (symbol) args.push('--symbol', symbol);
+    if (toIndex !== undefined) args.push('--to-index', String(toIndex));
+    if (before) args.push('--before', before);
+    if (after) args.push('--after', after);
+    return call(args);
+  },
+);
+
+server.registerTool(
+  'cmux_group_members',
+  {
+    title: 'Manage group membership',
+    description:
+      "add a workspace to a group, remove a workspace from its group (group inferred from membership), or set-anchor to make a member the group's anchor/header row.",
+    inputSchema: {
+      action: z.enum(['add', 'remove', 'set-anchor']),
+      workspace: z.string().describe('Workspace ref like "workspace:3".'),
+      group: z.string().optional().describe('Group ref; required for add and set-anchor.'),
+    },
+  },
+  ({ action, workspace, group }) => {
+    const args = ['workspace', 'group', action, '--workspace', workspace];
+    if (group) args.push('--group', group);
+    return call(args);
   },
 );
 
