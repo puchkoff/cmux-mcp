@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.4' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.5' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -56,6 +56,28 @@ async function surfaceWorkspace(surface: string): Promise<string | null> {
   return null;
 }
 
+// Resolve an anchor ref (pane:N or surface:N) to the workspace it lives in and
+// the pane to focus. new-pane has no pane-anchor flag — it splits the target
+// workspace's active pane — so to split next to a SPECIFIC pane we look up its
+// workspace here, focus it, then split there. A surface ref resolves to its
+// containing pane.
+async function resolveAnchor(ref: string): Promise<{ workspace: string; pane: string } | null> {
+  const res = await runCmux(['tree', '--all']);
+  if (!res.ok) return null;
+  let ws: string | null = null;
+  let pane: string | null = null;
+  for (const line of res.output.split('\n')) {
+    const wm = line.match(/\bworkspace (workspace:\d+)/);
+    if (wm) ws = wm[1];
+    const pm = line.match(/\bpane (pane:\d+)/);
+    if (pm) pane = pm[1];
+    if (ref.startsWith('pane:') && pm && pm[1] === ref) return ws ? { workspace: ws, pane: ref } : null;
+    const sm = line.match(/\bsurface (surface:\d+)/);
+    if (ref.startsWith('surface:') && sm && sm[1] === ref) return ws && pane ? { workspace: ws, pane } : null;
+  }
+  return null;
+}
+
 async function callerWorkspace(): Promise<string | null> {
   const id = await runCmux(['identify']);
   if (!id.ok) return null;
@@ -98,7 +120,11 @@ server.registerTool(
   'cmux_identify',
   {
     title: 'Identify current context',
-    description: 'Return the caller and focused window/workspace/pane/surface refs as JSON.',
+    description:
+      'Return both the caller and focused window/workspace/pane/surface refs as JSON. ' +
+      'caller = the pane that ISSUED this MCP call (you); focused = wherever UI focus currently is. ' +
+      'They DIFFER whenever a human (or another pane) has moved focus away from the caller. ' +
+      'Use caller.pane_ref as the anchor_pane for cmux_new_pane to place panes next to yourself deterministically.',
     inputSchema: {},
   },
   () => call(['identify']),
@@ -164,19 +190,47 @@ server.registerTool(
   'cmux_new_pane',
   {
     title: 'Split a new pane',
-    description: 'Open a new pane (terminal or browser) by splitting in the given direction.',
+    description:
+      'Open a new pane (terminal or browser) by splitting in the given direction. ' +
+      'For deterministic placement, pass anchor_pane = your own pane_ref from cmux_identify (the caller block): ' +
+      'the split then lands next to THAT pane in ITS workspace, regardless of where UI focus currently is. ' +
+      "Without an anchor, target resolution is: anchor_pane > workspace > the caller's workspace > the focused workspace.",
     inputSchema: {
       direction: z.enum(['left', 'right', 'up', 'down']).default('right'),
       type: z.enum(['terminal', 'browser']).optional(),
       url: z.string().optional().describe('Initial URL for a browser pane.'),
+      anchor_pane: z
+        .string()
+        .optional()
+        .describe(
+          'Split relative to this specific pane (pane:N) or surface (surface:N), in the workspace it lives in — ' +
+            "regardless of UI focus. Pass cmux_identify's caller.pane_ref to place the new pane next to yourself. " +
+            'Takes precedence over workspace.',
+        ),
       workspace: workspaceArg,
     },
   },
-  ({ direction, type, url, workspace }) => {
+  async ({ direction, type, url, anchor_pane, workspace }) => {
+    let target = workspace;
+    if (anchor_pane) {
+      const resolved = await resolveAnchor(anchor_pane);
+      if (!resolved)
+        return errorText(`anchor_pane ${anchor_pane} not found in any workspace (checked tree --all).`);
+      // Focus the anchor in its workspace so the split lands next to it, not next
+      // to whatever pane that workspace last had active.
+      const focus = await runCmux(['focus-pane', '--pane', resolved.pane, '--workspace', resolved.workspace]);
+      if (!focus.ok) return errorText(`Could not focus anchor ${resolved.pane} in ${resolved.workspace}: ${focus.output}`);
+      target = resolved.workspace;
+    } else if (!target) {
+      // Prefer the caller's own workspace over the focused one: an MCP caller
+      // almost always wants the new pane next to itself, not wherever a human
+      // last clicked. Falls through to cmux's focused default only if unknown.
+      target = (await callerWorkspace()) ?? undefined;
+    }
     const args = ['new-pane', '--direction', direction];
     if (type) args.push('--type', type);
     if (url) args.push('--url', url);
-    return call(withWorkspace(args, workspace));
+    return call(withWorkspace(args, target));
   },
 );
 

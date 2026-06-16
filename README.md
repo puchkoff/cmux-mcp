@@ -17,7 +17,7 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 | `cmux_tree` | window > workspace > pane > surface hierarchy |
 | `cmux_list` | List `windows` / `workspaces` / `panes` |
 | `cmux_capture` | Read a terminal surface's screen / scrollback (workspace/window-aware) |
-| `cmux_new_pane` | Split a new terminal or browser pane |
+| `cmux_new_pane` | Split a new terminal or browser pane (optional `anchor_pane` for deterministic placement) |
 | `cmux_new_workspace` | Create a workspace (name, cwd, startup command, optional group) |
 | `cmux_list_groups` | List workspace groups (JSON with anchor + member refs) |
 | `cmux_new_group` | Group workspaces under a collapsible sidebar header |
@@ -61,6 +61,21 @@ name the surface's real workspace and tell you which `workspace=` to pass.
 For agent panels (`cmux claude-teams`), discover the ref with `cmux_list_panels`,
 drive it with `cmux_send_panel`, and use `cmux_wait_ready` (with a `pattern`
 matching the input prompt) to know when it accepts input instead of sleeping.
+
+### Splitting next to a specific pane (`anchor_pane`)
+
+`cmux new-pane` has no pane-anchor flag — it splits the *target workspace's*
+active pane — so a bare "split right" lands wherever focus drifted, possibly in a
+different workspace than the caller. `cmux_new_pane` accepts an optional
+`anchor_pane` (a `pane:N` or `surface:N` ref): the server looks up the workspace
+that pane lives in, focuses it there, then splits — so the new pane lands next to
+that exact pane regardless of current UI focus. Pass your own
+`cmux_identify` → `caller.pane_ref` to place panes next to yourself.
+
+Target resolution order: `anchor_pane` > `workspace` > the **caller's** workspace
+(`CMUX_WORKSPACE_ID` / `identify.caller`) > the focused workspace. The caller's
+workspace beats focused because an MCP caller almost always wants the new pane
+next to itself, not wherever a human last clicked.
 
 ### "Close this workspace" safety
 
