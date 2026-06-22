@@ -3,8 +3,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
+import { rpc, rpcEnabled, caller } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.5' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.6' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -15,6 +16,70 @@ async function call(args: string[]): Promise<ToolResult> {
 
 function errorText(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true };
+}
+
+function okText(text: string): ToolResult {
+  return { content: [{ type: 'text', text }] };
+}
+
+// Run a command over the fast socket, formatting the JSON result into the text a
+// tool returns. Returns null to signal "fall back to the CLI" — when the socket
+// is unavailable or the request fails at the transport level, so the caller runs
+// the spawn-based path and behaviour is unchanged. A cmux-level error (ok:false)
+// is surfaced as an error ToolResult rather than a fallback, since the CLI would
+// report the same failure.
+async function rpcCall(
+  method: string,
+  params: Record<string, unknown>,
+  format: (result: any) => string,
+): Promise<ToolResult | null> {
+  if (!rpcEnabled()) return null;
+  let resp;
+  try {
+    resp = await rpc(method, params);
+  } catch {
+    return null; // transport failure → let the caller spawn the CLI
+  }
+  if (resp.ok) return okText(format(resp.result));
+  return errorText(resp.error?.message || resp.error?.code || 'cmux error');
+}
+
+// Move focus to a pane, preferring the socket. Returns the same {ok, output}
+// shape as runCmux so call sites stay uniform.
+async function focusPane(pane: string, workspace?: string): Promise<{ ok: boolean; output: string }> {
+  if (rpcEnabled()) {
+    try {
+      const params: Record<string, unknown> = { pane_id: pane };
+      if (workspace) params.workspace_id = workspace;
+      const r = await rpc('pane.focus', params);
+      if (r.ok) return { ok: true, output: 'OK' };
+      if (r.error) return { ok: false, output: r.error.message || r.error.code || 'cmux error' };
+    } catch {
+      // fall through to CLI
+    }
+  }
+  return runCmux(withWorkspace(['focus-pane', '--pane', pane], workspace));
+}
+
+// Read a surface's screen, preferring the socket. Same {ok, output} shape as
+// runCmux. The socket path has no window selector, so fall back for that.
+async function readScreen(
+  surface: string,
+  workspace?: string,
+  window?: string,
+): Promise<{ ok: boolean; output: string }> {
+  if (rpcEnabled() && !window) {
+    try {
+      const r = await rpc('surface.read_text', {
+        surface_id: surface,
+        workspace_id: workspace || caller().workspace_id,
+      });
+      if (r.ok) return { ok: true, output: (r.result?.text ?? '').trim() };
+    } catch {
+      // fall through to CLI
+    }
+  }
+  return runCmux(withTarget(['read-screen', '--surface', surface], workspace, window));
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -42,13 +107,36 @@ function withTarget(args: string[], workspace?: string, window?: string): string
   return a;
 }
 
-// Which workspace a surface ref actually lives in, scanned from `tree --all`.
-async function surfaceWorkspace(surface: string): Promise<string | null> {
+// One full tree, preferring the socket and falling back to `tree --all`. The
+// callbacks walk the structured form first; on the CLI path the raw text is
+// handed back for the legacy regex scans.
+async function fullTree(): Promise<{ windows?: any[]; text?: string } | null> {
+  if (rpcEnabled()) {
+    try {
+      const r = await rpc('system.tree', { all_windows: true, caller: caller() });
+      if (r.ok) return { windows: r.result?.windows ?? [] };
+    } catch {
+      // fall through to CLI
+    }
+  }
   const res = await runCmux(['tree', '--all']);
-  if (!res.ok) return null;
+  return res.ok ? { text: res.output } : null;
+}
+
+// Which workspace a surface ref actually lives in.
+async function surfaceWorkspace(surface: string): Promise<string | null> {
+  const tree = await fullTree();
+  if (!tree) return null;
+  if (tree.windows) {
+    for (const w of tree.windows)
+      for (const ws of w.workspaces ?? [])
+        for (const p of ws.panes ?? [])
+          for (const s of p.surfaces ?? []) if (s.ref === surface) return ws.ref;
+    return null;
+  }
   const re = new RegExp(`(^|\\s)${surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|\\[|$)`);
   let ws: string | null = null;
-  for (const line of res.output.split('\n')) {
+  for (const line of (tree.text ?? '').split('\n')) {
     const m = line.match(/workspace (workspace:\d+)/);
     if (m) ws = m[1];
     if (/\bsurface\b/.test(line) && re.test(line)) return ws;
@@ -62,11 +150,22 @@ async function surfaceWorkspace(surface: string): Promise<string | null> {
 // workspace here, focus it, then split there. A surface ref resolves to its
 // containing pane.
 async function resolveAnchor(ref: string): Promise<{ workspace: string; pane: string } | null> {
-  const res = await runCmux(['tree', '--all']);
-  if (!res.ok) return null;
+  const tree = await fullTree();
+  if (!tree) return null;
+  if (tree.windows) {
+    for (const w of tree.windows)
+      for (const ws of w.workspaces ?? [])
+        for (const p of ws.panes ?? []) {
+          if (ref.startsWith('pane:') && p.ref === ref) return { workspace: ws.ref, pane: ref };
+          if (ref.startsWith('surface:') && p.ref)
+            for (const s of p.surfaces ?? [])
+              if (s.ref === ref) return { workspace: ws.ref, pane: p.ref };
+        }
+    return null;
+  }
   let ws: string | null = null;
   let pane: string | null = null;
-  for (const line of res.output.split('\n')) {
+  for (const line of (tree.text ?? '').split('\n')) {
     const wm = line.match(/\bworkspace (workspace:\d+)/);
     if (wm) ws = wm[1];
     const pm = line.match(/\bpane (pane:\d+)/);
@@ -79,6 +178,14 @@ async function resolveAnchor(ref: string): Promise<{ workspace: string; pane: st
 }
 
 async function callerWorkspace(): Promise<string | null> {
+  if (rpcEnabled()) {
+    try {
+      const r = await rpc('system.identify', { caller: caller() });
+      if (r.ok) return r.result?.caller?.workspace_ref ?? null;
+    } catch {
+      // fall through to CLI
+    }
+  }
   const id = await runCmux(['identify']);
   if (!id.ok) return null;
   try {
@@ -93,7 +200,13 @@ async function callerWorkspace(): Promise<string | null> {
 // workspace, so one that lives elsewhere reads as missing. Distinguish that from a
 // surface that is genuinely a non-terminal (browser) panel.
 async function callSurface(args: string[], surface?: string, workspace?: string): Promise<ToolResult> {
-  const r = await call(args);
+  return explainSurfaceError(await call(args), surface, workspace);
+}
+
+// Given a surface-command result, turn the ambiguous "not a terminal" / "not
+// found" failures into an explanation of WHY (see callSurface above). Shared by
+// the CLI and socket paths.
+async function explainSurfaceError(r: ToolResult, surface?: string, workspace?: string): Promise<ToolResult> {
   if (!r.isError || !surface) return r;
   const msg = r.content.map((c) => c.text).join('\n');
   if (!/not a terminal|not found/i.test(msg)) return r;
@@ -127,7 +240,9 @@ server.registerTool(
       'Use caller.pane_ref as the anchor_pane for cmux_new_pane to place panes next to yourself deterministically.',
     inputSchema: {},
   },
-  () => call(['identify']),
+  async () =>
+    (await rpcCall('system.identify', { caller: caller() }, (r) => JSON.stringify(r, null, 2))) ??
+    call(['identify']),
 );
 
 server.registerTool(
@@ -175,12 +290,20 @@ server.registerTool(
       scrollback: z.boolean().optional().describe('Include scrollback history.'),
     },
   },
-  ({ surface, workspace, window, lines, scrollback }) => {
+  async ({ surface, workspace, window, lines, scrollback }) => {
     const args = ['read-screen'];
     if (surface) args.push('--surface', surface);
     if (lines) args.push('--lines', String(lines));
     if (scrollback) args.push('--scrollback');
-    return callSurface(withTarget(args, workspace, window), surface, workspace);
+    const cli = () => callSurface(withTarget(args, workspace, window), surface, workspace);
+    // Socket read_text has no window selector — fall back to the CLI for that.
+    const surfaceId = surface ?? caller().surface_id;
+    if (window || !surfaceId) return cli();
+    const params: Record<string, unknown> = { surface_id: surfaceId, workspace_id: workspace || caller().workspace_id };
+    if (lines) params.lines = lines;
+    if (scrollback) params.scrollback = true;
+    const r = await rpcCall('surface.read_text', params, (res) => (res?.text ?? '').trim());
+    return r ? explainSurfaceError(r, surface, workspace) : cli();
   },
 );
 
@@ -218,7 +341,7 @@ server.registerTool(
         return errorText(`anchor_pane ${anchor_pane} not found in any workspace (checked tree --all).`);
       // Focus the anchor in its workspace so the split lands next to it, not next
       // to whatever pane that workspace last had active.
-      const focus = await runCmux(['focus-pane', '--pane', resolved.pane, '--workspace', resolved.workspace]);
+      const focus = await focusPane(resolved.pane, resolved.workspace);
       if (!focus.ok) return errorText(`Could not focus anchor ${resolved.pane} in ${resolved.workspace}: ${focus.output}`);
       target = resolved.workspace;
     } else if (!target) {
@@ -303,7 +426,10 @@ server.registerTool(
     description: 'Move focus to the given pane.',
     inputSchema: { pane: z.string().describe('Pane ref like "pane:38".'), workspace: workspaceArg },
   },
-  ({ pane, workspace }) => call(withWorkspace(['focus-pane', '--pane', pane], workspace)),
+  async ({ pane, workspace }) => {
+    const r = await focusPane(pane, workspace);
+    return r.ok ? okText(r.output) : errorText(r.output);
+  },
 );
 
 server.registerTool(
@@ -328,6 +454,17 @@ server.registerTool(
 
 // Look up a workspace title from list-workspaces ("* workspace:2  My Title  [selected]").
 async function workspaceTitle(ref: string): Promise<string | null> {
+  if (rpcEnabled()) {
+    try {
+      const r = await rpc('workspace.list', { ...caller() });
+      if (r.ok) {
+        const ws = (r.result?.workspaces ?? []).find((w: any) => w.ref === ref);
+        if (ws) return ws.title || ws.custom_title || null;
+      }
+    } catch {
+      // fall through to CLI
+    }
+  }
   const res = await runCmux(['list-workspaces']);
   if (!res.ok) return null;
   for (const line of res.output.split('\n')) {
@@ -516,11 +653,19 @@ server.registerTool(
       'Type literal text into a terminal surface. Does NOT press Enter — follow with cmux_send_key Enter. Pass workspace/window to target a surface in another workspace.',
     inputSchema: { text: z.string(), surface: surfaceArg, workspace: workspaceArg, window: windowArg },
   },
-  ({ text, surface, workspace, window }) => {
+  async ({ text, surface, workspace, window }) => {
     const args = ['send'];
     if (surface) args.push('--surface', surface);
     args.push(text);
-    return callSurface(withTarget(args, workspace, window), surface, workspace);
+    const cli = () => callSurface(withTarget(args, workspace, window), surface, workspace);
+    const surfaceId = surface ?? caller().surface_id;
+    if (window || !surfaceId) return cli();
+    const r = await rpcCall(
+      'surface.send_text',
+      { surface_id: surfaceId, text, workspace_id: workspace || caller().workspace_id },
+      () => 'OK',
+    );
+    return r ? explainSurfaceError(r, surface, workspace) : cli();
   },
 );
 
@@ -543,7 +688,19 @@ server.registerTool(
     const args = ['send-key'];
     if (surface) args.push('--surface', surface);
     args.push(normalized);
-    const r = await callSurface(withTarget(args, workspace, window), surface, workspace);
+    const cli = () => callSurface(withTarget(args, workspace, window), surface, workspace);
+    const surfaceId = surface ?? caller().surface_id;
+    let r: ToolResult;
+    if (window || !surfaceId) {
+      r = await cli();
+    } else {
+      const sock = await rpcCall(
+        'surface.send_key',
+        { key: normalized, surface_id: surfaceId, workspace_id: workspace || caller().workspace_id },
+        () => 'OK',
+      );
+      r = sock ? await explainSurfaceError(sock, surface, workspace) : await cli();
+    }
     if (r.isError && /unknown key/i.test(r.content.map((c) => c.text).join('\n'))) {
       return errorText(
         `Unknown key "${key}". cmux accepts named keys — e.g. Enter, Tab, Escape, Space, Backspace, Delete, ` +
@@ -608,7 +765,7 @@ server.registerTool(
     const re = pattern ? new RegExp(pattern) : null;
     let prev: string | null = null;
     while (Date.now() < deadline) {
-      const r = await runCmux(withTarget(['read-screen', '--surface', surface], workspace, window));
+      const r = await readScreen(surface, workspace, window);
       if (r.ok) {
         const screen = r.output.trim();
         if (re) {
