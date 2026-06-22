@@ -3,9 +3,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
-import { rpc, rpcEnabled, caller } from './rpc.js';
+import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.6' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.7' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -827,6 +827,9 @@ server.registerTool(
   },
   ({ args }) => call(args),
 );
+
+// Open the socket now so the first tool call doesn't pay connect+auth latency.
+prewarm();
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

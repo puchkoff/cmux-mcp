@@ -59,7 +59,11 @@ function failAllPending(err: Error): void {
   pending.clear();
 }
 
-function teardown(err: Error): void {
+// Tear the connection down and reject in-flight requests. `cooldown` gates
+// whether we then stop trying for a while: a peer-initiated close (cmux
+// restarted, idle disconnect) should reconnect immediately on the next call, so
+// only a genuine connect failure (no socket, refused) trips the cooldown.
+function teardown(err: Error, cooldown: boolean): void {
   if (socket) {
     socket.removeAllListeners();
     socket.destroy();
@@ -67,7 +71,7 @@ function teardown(err: Error): void {
   }
   ready = null;
   buffer = '';
-  cooldownUntil = Date.now() + COOLDOWN_MS;
+  if (cooldown) cooldownUntil = Date.now() + COOLDOWN_MS;
   failAllPending(err);
 }
 
@@ -103,12 +107,14 @@ function connect(): Promise<void> {
   ready = new Promise<void>((resolve, reject) => {
     const sock = net.connect(SOCKET_PATH);
     let authed = false;
+    // A failure during connect/auth means the socket is unreachable — cool down.
     const fail = (e: Error) => {
-      teardown(e);
+      teardown(e, true);
       reject(e);
     };
     sock.once('error', fail);
-    sock.on('close', () => teardown(new Error('cmux socket closed')));
+    // A close after we were connected isn't fatal — let the next call reconnect.
+    sock.on('close', () => teardown(new Error('cmux socket closed'), false));
     sock.on('connect', () => {
       // Local sockets reply "Authentication not required" and accept any token;
       // a secured socket needs the real password from the environment.
@@ -128,7 +134,7 @@ function connect(): Promise<void> {
         }
         authed = true;
         sock.removeListener('error', fail);
-        sock.on('error', (e) => teardown(e));
+        sock.on('error', (e) => teardown(e, false));
         socket = sock;
         resolve();
         if (buffer.includes('\n')) onData(Buffer.alloc(0)); // drain anything buffered
@@ -140,13 +146,26 @@ function connect(): Promise<void> {
   return ready;
 }
 
-// Send one JSON-RPC request over the shared connection. Rejects on any transport
-// or timeout failure so the caller can fall back to spawning the CLI.
+// Open (and authenticate) the connection ahead of the first real request so the
+// initial tool call doesn't pay the connect+auth round-trip. Best-effort: a
+// failure just trips the normal cooldown and the first call falls back to the CLI.
+export function prewarm(): void {
+  if (!rpcEnabled()) return;
+  connect().catch(() => {});
+}
+
+// Send one request over the shared connection. A connection dropped while idle
+// reconnects transparently on the next call, so retry once if the socket is gone
+// before we even write. Any remaining transport/timeout failure rejects so the
+// caller can fall back to spawning the CLI.
 export async function rpc(method: string, params: Record<string, unknown>): Promise<RpcResponse> {
   if (!rpcEnabled()) throw new Error('cmux rpc disabled');
   await connect();
+  if (!socket) {
+    await connect(); // one retry: the connection may have dropped while idle
+    if (!socket) throw new Error('cmux socket unavailable');
+  }
   const sock = socket;
-  if (!sock) throw new Error('cmux socket unavailable');
   const id = randomUUID();
   return new Promise<RpcResponse>((resolve, reject) => {
     const timer = setTimeout(() => {
