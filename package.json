@@ -1,6 +1,6 @@
 {
   "name": "cmux-mcp",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "MCP server wrapping the cmux CLI — panes, workspaces, send-keys, embedded browser.",
   "type": "module",
   "bin": {

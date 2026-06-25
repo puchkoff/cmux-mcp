@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.7' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.8' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
