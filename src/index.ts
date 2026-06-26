@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.8' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.9' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -436,13 +436,25 @@ server.registerTool(
   'cmux_close',
   {
     title: 'Close a surface or workspace',
-    description: 'Close a surface (tab) or an entire workspace.',
+    description:
+      'Close a surface (tab) or an entire workspace. For kind "surface" you may pass a pane ref instead, which closes that pane\'s selected surface.',
     inputSchema: {
       kind: z.enum(['surface', 'workspace']),
-      ref: z.string().describe('e.g. "surface:40" or "workspace:26".'),
+      ref: z
+        .string()
+        .describe(
+          'e.g. "surface:40" or "workspace:26". For kind "surface" a pane ref like "pane:7" is also accepted (closes that pane\'s selected surface).',
+        ),
     },
   },
-  ({ kind, ref }) => call([`close-${kind}`, `--${kind}`, ref]),
+  async ({ kind, ref }) => {
+    if (kind === 'surface' && ref.startsWith('pane:')) {
+      const { output } = await runCmux(['list-pane-surfaces', '--pane', ref]);
+      const match = output.match(/surface:\d+/);
+      if (match) ref = match[0];
+    }
+    return call([`close-${kind}`, `--${kind}`, ref]);
+  },
 );
 
 // "Close this workspace" must target the workspace the CALLING pane runs in
