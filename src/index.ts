@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.12' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.13' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -107,10 +107,10 @@ function withTarget(args: string[], workspace?: string, window?: string): string
   return a;
 }
 
-// One full tree, preferring the socket and falling back to `tree --all`. The
-// callbacks walk the structured form first; on the CLI path the raw text is
-// handed back for the legacy regex scans.
-async function fullTree(): Promise<{ windows?: any[]; text?: string } | null> {
+// One full tree, preferring the socket and falling back to `tree --all --json`.
+// Both paths return the same windows[].workspaces[].panes[].surfaces[] shape,
+// so callers never need to fall back to scraping rendered tree text.
+async function fullTree(): Promise<{ windows: any[] } | null> {
   if (rpcEnabled()) {
     try {
       const r = await rpc('system.tree', { all_windows: true, caller: caller() });
@@ -119,28 +119,23 @@ async function fullTree(): Promise<{ windows?: any[]; text?: string } | null> {
       // fall through to CLI
     }
   }
-  const res = await runCmux(['tree', '--all']);
-  return res.ok ? { text: res.output } : null;
+  const res = await runCmux(['tree', '--all', '--json']);
+  if (!res.ok) return null;
+  try {
+    return { windows: JSON.parse(res.output)?.windows ?? [] };
+  } catch {
+    return null;
+  }
 }
 
 // Which workspace a surface ref actually lives in.
 async function surfaceWorkspace(surface: string): Promise<string | null> {
   const tree = await fullTree();
   if (!tree) return null;
-  if (tree.windows) {
-    for (const w of tree.windows)
-      for (const ws of w.workspaces ?? [])
-        for (const p of ws.panes ?? [])
-          for (const s of p.surfaces ?? []) if (s.ref === surface) return ws.ref;
-    return null;
-  }
-  const re = new RegExp(`(^|\\s)${surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|\\[|$)`);
-  let ws: string | null = null;
-  for (const line of (tree.text ?? '').split('\n')) {
-    const m = line.match(/workspace (workspace:\d+)/);
-    if (m) ws = m[1];
-    if (/\bsurface\b/.test(line) && re.test(line)) return ws;
-  }
+  for (const w of tree.windows)
+    for (const ws of w.workspaces ?? [])
+      for (const p of ws.panes ?? [])
+        for (const s of p.surfaces ?? []) if (s.ref === surface) return ws.ref;
   return null;
 }
 
@@ -152,28 +147,14 @@ async function surfaceWorkspace(surface: string): Promise<string | null> {
 async function resolveAnchor(ref: string): Promise<{ workspace: string; pane: string } | null> {
   const tree = await fullTree();
   if (!tree) return null;
-  if (tree.windows) {
-    for (const w of tree.windows)
-      for (const ws of w.workspaces ?? [])
-        for (const p of ws.panes ?? []) {
-          if (ref.startsWith('pane:') && p.ref === ref) return { workspace: ws.ref, pane: ref };
-          if (ref.startsWith('surface:') && p.ref)
-            for (const s of p.surfaces ?? [])
-              if (s.ref === ref) return { workspace: ws.ref, pane: p.ref };
-        }
-    return null;
-  }
-  let ws: string | null = null;
-  let pane: string | null = null;
-  for (const line of (tree.text ?? '').split('\n')) {
-    const wm = line.match(/\bworkspace (workspace:\d+)/);
-    if (wm) ws = wm[1];
-    const pm = line.match(/\bpane (pane:\d+)/);
-    if (pm) pane = pm[1];
-    if (ref.startsWith('pane:') && pm && pm[1] === ref) return ws ? { workspace: ws, pane: ref } : null;
-    const sm = line.match(/\bsurface (surface:\d+)/);
-    if (ref.startsWith('surface:') && sm && sm[1] === ref) return ws && pane ? { workspace: ws, pane } : null;
-  }
+  for (const w of tree.windows)
+    for (const ws of w.workspaces ?? [])
+      for (const p of ws.panes ?? []) {
+        if (ref.startsWith('pane:') && p.ref === ref) return { workspace: ws.ref, pane: ref };
+        if (ref.startsWith('surface:') && p.ref)
+          for (const s of p.surfaces ?? [])
+            if (s.ref === ref) return { workspace: ws.ref, pane: p.ref };
+      }
   return null;
 }
 
