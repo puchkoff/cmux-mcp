@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.9' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.10' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -544,6 +544,43 @@ server.registerTool(
 
     return call(['close-workspace', '--workspace', ref]);
   },
+);
+
+// --- Config & health --------------------------------------------------------
+
+server.registerTool(
+  'cmux_config',
+  {
+    title: 'Inspect or reload cmux.json config',
+    description:
+      'Manage cmux settings (~/.config/cmux/cmux.json). doctor validates JSONC syntax; path/docs print the config paths, docs URL, and schema URL — run before hand-editing cmux.json, and back up any existing file to a timestamped .bak first; reload re-reads cmux.json + Ghostty config and refreshes terminals (no app restart needed); get/set reads or writes sidebar-font-size or surface-tab-bar-font-size.',
+    inputSchema: {
+      action: z.enum(['doctor', 'path', 'docs', 'reload', 'get', 'set']),
+      key: z
+        .enum(['sidebar-font-size', 'surface-tab-bar-font-size'])
+        .optional()
+        .describe('Required for get/set.'),
+      points: z.number().optional().describe('Point size, required for set.'),
+      path: z.string().optional().describe('Config file to validate, for doctor (default: cmux.json).'),
+    },
+  },
+  ({ action, key, points, path }) => {
+    const args = ['config', action];
+    if (action === 'doctor' && path) args.push('--path', path);
+    if ((action === 'get' || action === 'set') && key) args.push(key);
+    if (action === 'set' && points !== undefined) args.push(String(points));
+    return call(args);
+  },
+);
+
+server.registerTool(
+  'cmux_surface_health',
+  {
+    title: 'Check surface health',
+    description: 'List health details (e.g. stuck/unresponsive terminals) for surfaces in a workspace.',
+    inputSchema: { workspace: workspaceArg, window: windowArg },
+  },
+  ({ workspace, window }) => call(withTarget(['surface-health'], workspace, window)),
 );
 
 // --- Workspace groups ------------------------------------------------------
