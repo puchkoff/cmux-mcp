@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
+import { findSurfaceWorkspace, findAnchor } from './tree.js';
 
 const server = new McpServer({ name: 'cmux-mcp', version: '0.1.13' });
 
@@ -131,12 +132,7 @@ async function fullTree(): Promise<{ windows: any[] } | null> {
 // Which workspace a surface ref actually lives in.
 async function surfaceWorkspace(surface: string): Promise<string | null> {
   const tree = await fullTree();
-  if (!tree) return null;
-  for (const w of tree.windows)
-    for (const ws of w.workspaces ?? [])
-      for (const p of ws.panes ?? [])
-        for (const s of p.surfaces ?? []) if (s.ref === surface) return ws.ref;
-  return null;
+  return tree ? findSurfaceWorkspace(tree.windows, surface) : null;
 }
 
 // Resolve an anchor ref (pane:N or surface:N) to the workspace it lives in and
@@ -146,16 +142,7 @@ async function surfaceWorkspace(surface: string): Promise<string | null> {
 // containing pane.
 async function resolveAnchor(ref: string): Promise<{ workspace: string; pane: string } | null> {
   const tree = await fullTree();
-  if (!tree) return null;
-  for (const w of tree.windows)
-    for (const ws of w.workspaces ?? [])
-      for (const p of ws.panes ?? []) {
-        if (ref.startsWith('pane:') && p.ref === ref) return { workspace: ws.ref, pane: ref };
-        if (ref.startsWith('surface:') && p.ref)
-          for (const s of p.surfaces ?? [])
-            if (s.ref === ref) return { workspace: ws.ref, pane: p.ref };
-      }
-  return null;
+  return tree ? findAnchor(tree.windows, ref) : null;
 }
 
 async function callerWorkspace(): Promise<string | null> {

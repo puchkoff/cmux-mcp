@@ -14,7 +14,8 @@
     "prepare": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
