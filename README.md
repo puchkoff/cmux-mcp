@@ -19,6 +19,8 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 | `cmux_capture` | Read a terminal surface's screen / scrollback (workspace/window-aware) |
 | `cmux_new_pane` | Split a new terminal or browser pane (optional `anchor_pane` for deterministic placement) |
 | `cmux_new_workspace` | Create a workspace (name, cwd, startup command, optional group) |
+| `cmux_config` | Inspect/reload `cmux.json` — doctor, path/docs, reload, get/set font-size keys |
+| `cmux_surface_health` | List health details (e.g. stuck/unresponsive terminals) for surfaces in a workspace |
 | `cmux_new_group` | Group workspaces under a collapsible sidebar header |
 | `cmux_group_action` | rename / collapse / expand / pin / focus / set-color / set-icon / move / ungroup / delete (confirm-guarded) a group |
 | `cmux_group_members` | add / remove / set-anchor of a group's member workspaces |

@@ -2,7 +2,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { runCmux, withWorkspace } from './cmux.js';
+import { runCmux, withWorkspace, withTarget } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 import { findSurfaceWorkspace, findAnchor } from './tree.js';
 
@@ -97,16 +97,6 @@ const surfaceArg = z
   .string()
   .optional()
   .describe('Surface ref like "surface:40". Defaults to the current pane.');
-
-// Append --workspace/--window only when explicitly given. No env fallback — these
-// surface-targeting tools historically sent neither, letting cmux resolve against
-// the caller's own context; that exact behavior must hold when both are omitted.
-function withTarget(args: string[], workspace?: string, window?: string): string[] {
-  const a = [...args];
-  if (workspace) a.push('--workspace', workspace);
-  if (window) a.push('--window', window);
-  return a;
-}
 
 // One full tree, preferring the socket and falling back to `tree --all --json`.
 // Both paths return the same windows[].workspaces[].panes[].surfaces[] shape,

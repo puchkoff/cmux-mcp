@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 // process is itself likely running inside a cmux pane with both set.
 process.env.CMUX_BIN = '/no/such/cmux-binary';
 delete process.env.CMUX_WORKSPACE_ID;
-const { withWorkspace, runCmux } = await import('../dist/cmux.js');
+const { withWorkspace, withTarget, runCmux } = await import('../dist/cmux.js');
 
 test('withWorkspace appends --workspace when a value is passed', () => {
   assert.deepEqual(withWorkspace(['tree'], 'workspace:5'), ['tree', '--workspace', 'workspace:5']);
@@ -14,6 +14,30 @@ test('withWorkspace appends --workspace when a value is passed', () => {
 
 test('withWorkspace leaves args untouched with no workspace given', () => {
   assert.deepEqual(withWorkspace(['tree']), ['tree']);
+});
+
+test('withTarget appends both flags when both are given', () => {
+  assert.deepEqual(withTarget(['read-screen'], 'workspace:1', 'window:2'), [
+    'read-screen',
+    '--workspace',
+    'workspace:1',
+    '--window',
+    'window:2',
+  ]);
+});
+
+test('withTarget appends only --workspace when window is omitted', () => {
+  assert.deepEqual(withTarget(['read-screen'], 'workspace:1'), ['read-screen', '--workspace', 'workspace:1']);
+});
+
+test('withTarget appends only --window when workspace is omitted', () => {
+  assert.deepEqual(withTarget(['read-screen'], undefined, 'window:2'), ['read-screen', '--window', 'window:2']);
+});
+
+test('withTarget leaves args untouched, and does not mutate the input, when neither is given', () => {
+  const input = ['read-screen'];
+  assert.deepEqual(withTarget(input), ['read-screen']);
+  assert.deepEqual(input, ['read-screen']); // withTarget must copy, not mutate, its input
 });
 
 test('runCmux reports a clear error when the binary is missing', async () => {

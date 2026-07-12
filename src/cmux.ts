@@ -53,3 +53,14 @@ export function withWorkspace(args: string[], workspace?: string): string[] {
   const ws = workspace || DEFAULT_WORKSPACE;
   return ws ? [...args, '--workspace', ws] : args;
 }
+
+// Append --workspace/--window only when explicitly given. No env fallback —
+// these surface-targeting tools historically sent neither, letting cmux
+// resolve against the caller's own context; that exact behavior must hold
+// when both are omitted.
+export function withTarget(args: string[], workspace?: string, window?: string): string[] {
+  const a = [...args];
+  if (workspace) a.push('--workspace', workspace);
+  if (window) a.push('--window', window);
+  return a;
+}
