@@ -15,19 +15,17 @@ so this stays a thin, robust layer rather than re-speaking the Unix-socket RPC.
 |------|--------------|
 | `cmux_identify` | Current + focused window/workspace/pane/surface refs (JSON) |
 | `cmux_tree` | window > workspace > pane > surface hierarchy |
-| `cmux_list` | List `windows` / `workspaces` / `panes` |
+| `cmux_list` | List `windows` / `workspaces` / `panes` / `groups` |
 | `cmux_capture` | Read a terminal surface's screen / scrollback (workspace/window-aware) |
 | `cmux_new_pane` | Split a new terminal or browser pane (optional `anchor_pane` for deterministic placement) |
 | `cmux_new_workspace` | Create a workspace (name, cwd, startup command, optional group) |
-| `cmux_list_groups` | List workspace groups (JSON with anchor + member refs) |
 | `cmux_new_group` | Group workspaces under a collapsible sidebar header |
 | `cmux_group_action` | rename / collapse / expand / pin / focus / set-color / set-icon / move / ungroup / delete (confirm-guarded) a group |
 | `cmux_group_members` | add / remove / set-anchor of a group's member workspaces |
 | `cmux_rename_workspace` | Retitle a workspace (via `workspace-action`) |
 | `cmux_rename_tab` | Retitle a tab (the pane's tab label, via `rename-tab`) |
 | `cmux_focus_pane` | Focus a pane |
-| `cmux_close` | Close a surface or workspace (explicit ref) |
-| `cmux_close_current_workspace` | Safely close the *calling* pane's workspace (confirm-guarded) |
+| `cmux_close` | Close a surface or workspace (explicit ref, or `"current"` to safely close the *calling* pane's own workspace, confirm-guarded) |
 | `cmux_send` | Type literal text into a pane (no Enter, workspace/window-aware) |
 | `cmux_send_key` | Send a named key (`Enter`, `C-c`/`ctrl+c`, …) |
 | `cmux_list_panels` | List a workspace's panels to discover a panel ref |
@@ -83,7 +81,7 @@ next to itself, not wherever a human last clicked.
 runs in) and `focused` (the workspace with UI focus right now). These differ — an
 agent runs in workspace A while the user clicks into workspace B, so B is focused.
 
-`cmux_close_current_workspace` always resolves the target from
+`cmux_close` with `ref: "current"` always resolves the target from
 `identify.caller.workspace_ref`, never `focused`. If `caller` is null (invoked
 outside a cmux terminal) it refuses and asks for an explicit ref rather than
 guessing from focus. The first call only previews the resolved target

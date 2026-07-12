@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.11' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.12' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -234,10 +234,9 @@ server.registerTool(
   {
     title: 'Identify current context',
     description:
-      'Return both the caller and focused window/workspace/pane/surface refs as JSON. ' +
-      'caller = the pane that ISSUED this MCP call (you); focused = wherever UI focus currently is. ' +
-      'They DIFFER whenever a human (or another pane) has moved focus away from the caller. ' +
-      'Use caller.pane_ref as the anchor_pane for cmux_new_pane to place panes next to yourself deterministically.',
+      'Return caller and focused window/workspace/pane/surface refs as JSON. caller = you (the issuing pane); ' +
+      'focused = current UI focus — they differ if focus moved away. Use caller.pane_ref as anchor_pane in ' +
+      'cmux_new_pane to place panes next to yourself.',
     inputSchema: {},
   },
   async () =>
@@ -265,11 +264,12 @@ server.registerTool(
     title: 'List windows / workspaces / panes',
     description: 'List cmux objects of the given kind.',
     inputSchema: {
-      kind: z.enum(['windows', 'workspaces', 'panes']),
+      kind: z.enum(['windows', 'workspaces', 'panes', 'groups']),
       workspace: workspaceArg,
     },
   },
   ({ kind, workspace }) => {
+    if (kind === 'groups') return call(['workspace', 'group', 'list', '--json']);
     const args = [`list-${kind}`];
     // list-windows takes no workspace filter; the other two do.
     return call(kind === 'windows' ? args : withWorkspace(args, workspace));
@@ -281,7 +281,7 @@ server.registerTool(
   {
     title: 'Read pane output',
     description:
-      'Read the current screen (or scrollback) of a terminal surface (wraps read-screen). Pass workspace/window to read a surface that lives in another workspace.',
+      'Read the current screen or scrollback of a terminal surface. Pass workspace/window for a surface in another workspace.',
     inputSchema: {
       surface: surfaceArg,
       workspace: workspaceArg,
@@ -314,10 +314,9 @@ server.registerTool(
   {
     title: 'Split a new pane',
     description:
-      'Open a new pane (terminal or browser) by splitting in the given direction. ' +
-      'For deterministic placement, pass anchor_pane = your own pane_ref from cmux_identify (the caller block): ' +
-      'the split then lands next to THAT pane in ITS workspace, regardless of where UI focus currently is. ' +
-      "Without an anchor, target resolution is: anchor_pane > workspace > the caller's workspace > the focused workspace.",
+      'Open a new pane by splitting in the given direction. Pass anchor_pane (your pane_ref from ' +
+      "cmux_identify.caller) to split next to that specific pane regardless of UI focus. Resolution order: " +
+      "anchor_pane > workspace > caller's workspace > focused workspace.",
     inputSchema: {
       direction: z.enum(['left', 'right', 'up', 'down']).default('right'),
       type: z.enum(['terminal', 'browser']).optional(),
@@ -326,9 +325,7 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          'Split relative to this specific pane (pane:N) or surface (surface:N), in the workspace it lives in — ' +
-            "regardless of UI focus. Pass cmux_identify's caller.pane_ref to place the new pane next to yourself. " +
-            'Takes precedence over workspace.',
+          'Split next to this pane/surface ref, in its own workspace, regardless of UI focus. Takes precedence over workspace.',
         ),
       workspace: workspaceArg,
     },
@@ -370,9 +367,8 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          'Command to run in the first pane (e.g. the bare agent binary). Do NOT bake an initial prompt into ' +
-            'this string — quoting/flag parsing is fragile across CLIs. Start the bare command, then post the ' +
-            'prompt with cmux_send followed by cmux_send_key Enter.',
+          'Command to run in the first pane (bare binary only — do not bake a prompt into this string, quoting ' +
+            'parses fragile across CLIs). Post prompts after with cmux_send + cmux_send_key Enter.',
         ),
       group: z.string().optional().describe('Add the new workspace to this group, e.g. "workspace_group:3".'),
     },
@@ -439,38 +435,6 @@ server.registerTool(
   },
 );
 
-server.registerTool(
-  'cmux_close',
-  {
-    title: 'Close a surface or workspace',
-    description:
-      'Close a surface (tab) or an entire workspace. For kind "surface" you may pass a pane ref instead, which closes that pane\'s selected surface.',
-    inputSchema: {
-      kind: z.enum(['surface', 'workspace']),
-      ref: z
-        .string()
-        .describe(
-          'e.g. "surface:40" or "workspace:26". For kind "surface" a pane ref like "pane:7" is also accepted (closes that pane\'s selected surface).',
-        ),
-    },
-  },
-  async ({ kind, ref }) => {
-    if (kind === 'surface' && ref.startsWith('pane:')) {
-      const { output } = await runCmux(['list-pane-surfaces', '--pane', ref]);
-      const match = output.match(/surface:\d+/);
-      if (match) ref = match[0];
-    }
-    return call([`close-${kind}`, `--${kind}`, ref]);
-  },
-);
-
-// "Close this workspace" must target the workspace the CALLING pane runs in
-// (identify.caller.workspace_ref), never the UI-focused one. An agent can run in
-// workspace A while the user has clicked into workspace B, so B is focused.
-// Resolving from `focused` (or `identify --no-caller`, which drops caller) would
-// close whatever the user last clicked — possibly unrelated. So we read caller,
-// refuse if there is no calling pane, and require an explicit confirm first.
-
 // Look up a workspace title from list-workspaces ("* workspace:2  My Title  [selected]").
 async function workspaceTitle(ref: string): Promise<string | null> {
   if (rpcEnabled()) {
@@ -497,59 +461,53 @@ async function workspaceTitle(ref: string): Promise<string | null> {
 }
 
 server.registerTool(
-  'cmux_close_current_workspace',
+  'cmux_close',
   {
-    title: "Close the calling pane's workspace (safe)",
+    title: 'Close a surface or workspace',
     description:
-      "Close the workspace the CALLING pane runs in (identify.caller.workspace_ref) — NOT the focused one, which may be a workspace the user just clicked into. First call previews the resolved target; call again with confirm=true to actually close. Refuses if there is no calling pane (invoked outside a cmux terminal) rather than guessing from focus.",
+      'Close a surface (tab) or an entire workspace. For kind "surface" a pane ref also works (closes that ' +
+      'pane\'s selected surface). For kind "workspace", ref "current" safely closes the CALLING pane\'s own ' +
+      'workspace (never the UI-focused one) — first call previews it, call again with confirm=true to close.',
     inputSchema: {
-      confirm: z
-        .boolean()
-        .optional()
-        .describe('Set true to actually close. Omit/false to only preview the resolved target.'),
+      kind: z.enum(['surface', 'workspace']),
+      ref: z
+        .string()
+        .describe(
+          'e.g. "surface:40" or "workspace:26". Kind "surface" also accepts a pane ref like "pane:7". Kind ' +
+            '"workspace" also accepts "current" for the calling pane\'s own workspace (requires confirm=true).',
+        ),
+      confirm: z.boolean().optional().describe('Required true when ref is "current"; ignored otherwise.'),
     },
   },
-  async ({ confirm }) => {
-    const id = await runCmux(['identify']);
-    if (!id.ok) return { content: [{ type: 'text', text: id.output }], isError: true };
-
-    let caller: { workspace_ref?: string } | null = null;
-    try {
-      caller = (JSON.parse(id.output) as { caller?: { workspace_ref?: string } | null }).caller ?? null;
-    } catch {
-      return { content: [{ type: 'text', text: `Could not parse identify output:\n${id.output}` }], isError: true };
+  async ({ kind, ref, confirm }) => {
+    if (kind === 'surface' && ref.startsWith('pane:')) {
+      const { output } = await runCmux(['list-pane-surfaces', '--pane', ref]);
+      const match = output.match(/surface:\d+/);
+      if (match) ref = match[0];
     }
-
-    const ref = caller?.workspace_ref;
-    if (!ref) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text:
-              'No calling pane (identify.caller is null) — this was not invoked from inside a cmux terminal. ' +
-              'Refusing to fall back to the focused workspace. Pass an explicit workspace ref to cmux_close instead.',
-          },
-        ],
-        isError: true,
-      };
+    if (kind === 'workspace' && ref === 'current') {
+      // Must resolve from the CALLING pane (identify.caller.workspace_ref), never
+      // the UI-focused one — a human may have clicked into an unrelated workspace.
+      const id = await runCmux(['identify']);
+      if (!id.ok) return { content: [{ type: 'text', text: id.output }], isError: true };
+      let callerRef: string | undefined;
+      try {
+        callerRef = (JSON.parse(id.output) as { caller?: { workspace_ref?: string } | null }).caller
+          ?.workspace_ref;
+      } catch {
+        return { content: [{ type: 'text', text: `Could not parse identify output:\n${id.output}` }], isError: true };
+      }
+      if (!callerRef) {
+        return errorText(
+          'No calling pane (identify.caller is null) — not invoked from inside a cmux terminal. Pass an explicit workspace ref instead.',
+        );
+      }
+      const title = await workspaceTitle(callerRef);
+      const label = title ? `${callerRef} — ${title}` : callerRef;
+      if (!confirm) return okText(`About to close workspace: ${label}. Confirm by calling again with confirm=true.`);
+      return call(['close-workspace', '--workspace', callerRef]);
     }
-
-    const title = await workspaceTitle(ref);
-    const label = title ? `${ref} — ${title}` : ref;
-
-    if (!confirm) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `About to close workspace: ${label}. Confirm by calling cmux_close_current_workspace again with confirm=true.`,
-          },
-        ],
-      };
-    }
-
-    return call(['close-workspace', '--workspace', ref]);
+    return call([`close-${kind}`, `--${kind}`, ref]);
   },
 );
 
@@ -560,7 +518,9 @@ server.registerTool(
   {
     title: 'Inspect or reload cmux.json config',
     description:
-      'Manage cmux settings (~/.config/cmux/cmux.json). doctor validates JSONC syntax; path/docs print the config paths, docs URL, and schema URL — run before hand-editing cmux.json, and back up any existing file to a timestamped .bak first; reload re-reads cmux.json + Ghostty config and refreshes terminals (no app restart needed); get/set reads or writes sidebar-font-size or surface-tab-bar-font-size.',
+      'Manage cmux settings (~/.config/cmux/cmux.json). doctor: validate JSONC. path/docs: print paths/schema URL ' +
+      '(run before hand-editing; back up to .bak first). reload: re-read config + Ghostty, no restart needed. ' +
+      'get/set: read/write sidebar-font-size or surface-tab-bar-font-size.',
     inputSchema: {
       action: z.enum(['doctor', 'path', 'docs', 'reload', 'get', 'set']),
       key: z
@@ -599,22 +559,13 @@ server.registerTool(
 const groupArg = z.string().describe('Group ref like "workspace_group:3" (or its UUID).');
 
 server.registerTool(
-  'cmux_list_groups',
-  {
-    title: 'List workspace groups',
-    description:
-      "List sidebar workspace groups as JSON, including each group's name, anchor, and member workspace refs.",
-    inputSchema: {},
-  },
-  () => call(['workspace', 'group', 'list', '--json']),
-);
-
-server.registerTool(
   'cmux_new_group',
   {
     title: 'Create a workspace group',
     description:
-      'Group workspaces under a collapsible sidebar header. Spawns a fresh anchor workspace that becomes the header row. If `workspaces` is omitted, cmux seeds the group from the active sidebar selection / caller workspace — pass it explicitly to control membership.',
+      'Group workspaces under a collapsible sidebar header (spawns a fresh anchor workspace as the header row). ' +
+      'Omitting `workspaces` seeds from the active sidebar selection/caller workspace — pass it explicitly to ' +
+      'control membership.',
     inputSchema: {
       name: z.string().optional(),
       workspaces: z
@@ -806,7 +757,9 @@ server.registerTool(
   {
     title: 'Wait for a panel to be ready',
     description:
-      'Poll a surface/panel until it looks ready for input, then return the final screen. Ready = the screen matches `pattern` (regex) or, when no pattern is given, the screen is non-empty and unchanged between two polls. Use after spawning a panel instead of sleeping. For a live TUI (blinking cursor never settles) pass a `pattern` that marks the input prompt.',
+      'Poll a surface until ready, then return the final screen. Ready = matches `pattern` regex, or (no pattern) ' +
+      'the screen is non-empty and unchanged between polls. Use instead of sleeping after spawning a panel; for a ' +
+      'live TUI that never settles, pass a `pattern`.',
     inputSchema: {
       surface: z.string().describe('Surface/panel ref to watch, e.g. "surface:39".'),
       pattern: z.string().optional().describe('Regex; ready as soon as the screen matches it.'),
