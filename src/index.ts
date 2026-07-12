@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { runCmux, withWorkspace } from './cmux.js';
 import { rpc, rpcEnabled, caller, prewarm } from './rpc.js';
 
-const server = new McpServer({ name: 'cmux-mcp', version: '0.1.10' });
+const server = new McpServer({ name: 'cmux-mcp', version: '0.1.11' });
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
@@ -366,7 +366,14 @@ server.registerTool(
     inputSchema: {
       name: z.string().optional(),
       cwd: z.string().optional(),
-      command: z.string().optional().describe('Command to run in the first pane.'),
+      command: z
+        .string()
+        .optional()
+        .describe(
+          'Command to run in the first pane (e.g. the bare agent binary). Do NOT bake an initial prompt into ' +
+            'this string — quoting/flag parsing is fragile across CLIs. Start the bare command, then post the ' +
+            'prompt with cmux_send followed by cmux_send_key Enter.',
+        ),
       group: z.string().optional().describe('Add the new workspace to this group, e.g. "workspace_group:3".'),
     },
   },
